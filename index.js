@@ -3,6 +3,7 @@ const https = require("https");
 const net = require("net");
 const fs = require("fs");
 const url = require("url");
+const zlib = require("zlib");
 
 const forge = require("node-forge");
 
@@ -259,10 +260,6 @@ function handleHttpsRequest(req, res) {
         };
 
     const proxyReq = https.request(options, (proxyRes) => {
-      // res.writeHead(proxyRes.statusCode, proxyRes.headers);
-      // res.writeHead(proxyRes.statusCode, proxyRes.headers);
-
-      // 收集响应体
       let responseBody = "";
       let rawBody = Buffer.from([]);
 
@@ -281,14 +278,11 @@ function handleHttpsRequest(req, res) {
       });
 
       proxyRes.on("end", () => {
-        // res.writeHead(proxyRes.statusCode, modifiedHeaders);
-        // res.end(rawBody);
-        // return;
-
         console.log("\n=== HTTPS Response ===");
         console.log(`ContentType: ${proxyRes.headers["content-type"]}`);
-        // console.log("Headers:", proxyRes.headers);
-        console.log("Body:", responseBody);
+        console.log(
+          `ContentEncoding: ${proxyRes.headers["content-encoding"] || "none"}`
+        );
         console.log("==================\n");
 
         // 修改响应头
@@ -296,25 +290,41 @@ function handleHttpsRequest(req, res) {
           ...proxyRes.headers,
           __extra_from_proxy_server: "true",
         };
+
         // 如果是 JSON 响应，可以修改响应体
         if (proxyRes.headers["content-type"]?.includes("application/json")) {
           try {
-            let jsonBody = JSON.parse(responseBody);
+            // 根据 Content-Encoding 解码响应体
+            let decodedBody = rawBody;
+            const contentEncoding = proxyRes.headers["content-encoding"];
+
+            if (contentEncoding) {
+              if (contentEncoding.includes("gzip")) {
+                decodedBody = zlib.gunzipSync(rawBody);
+              } else if (contentEncoding.includes("deflate")) {
+                decodedBody = zlib.inflateSync(rawBody);
+              } else if (contentEncoding.includes("br")) {
+                decodedBody = zlib.brotliDecompressSync(rawBody);
+              }
+            }
+            console.log("Before parse Body", decodedBody.toString());
+            let jsonBody = JSON.parse(decodedBody.toString());
             // 修改 JSON 数据
             jsonBody.modified = true;
 
             // 转换回字符串
             const modifiedBody = JSON.stringify(jsonBody);
 
-            // 更新 content-length
+            // 更新 content-length 并移除 content-encoding
             modifiedHeaders["content-length"] = Buffer.byteLength(modifiedBody);
+            delete modifiedHeaders["content-encoding"];
 
             // 发送修改后的响应
             res.writeHead(proxyRes.statusCode, modifiedHeaders);
             res.end(modifiedBody);
             return;
           } catch (e) {
-            console.error("Error parsing JSON:", e);
+            console.error("Error processing response:", e);
           }
         }
         // 如果不是 JSON 或解析失败，发送原始响应
