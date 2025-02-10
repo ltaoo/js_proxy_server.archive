@@ -129,10 +129,28 @@ function handleHttpsRequest(req, res) {
       proxyRes.pipe(res);
     });
 
+    // 添加超时处理
+    const TIMEOUT = 2000; // 2秒超时
+    const timeoutId = setTimeout(() => {
+      proxyReq.destroy();
+      console.log(`Request timeout for: ${req.url}`);
+      res.writeHead(504, {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(JSON.stringify({ error: 'Request timeout' }))
+      });
+      res.end(JSON.stringify({ error: 'Request timeout' }));
+    }, TIMEOUT);
+
+    // 在请求成功时清除超时计时器
+    proxyReq.on('response', () => {
+      clearTimeout(timeoutId);
+    });
+
     proxyReq.write(requestBody);
     proxyReq.end();
 
     proxyReq.on("error", (err) => {
+      clearTimeout(timeoutId); // 错误时也要清除计时器
       console.error("HTTPS Proxy error:", err);
       res.writeHead(500);
       res.end("Proxy Error");
