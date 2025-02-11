@@ -39,6 +39,11 @@
 
 ## 使用方法
 
+将 `cert/certificate.crt` 证书安装到系统证书
+
+![](./guide.png)
+
 安装依赖后 `node index.js`，将系统代理设置为 `127.0.0.1:8080`，当访问任意满足 `/some_special_path.js` 结尾的请求，均返回 `alert("hello")`。
+
 
 查看控制台，所有响应头都增加了 `__extra_from_proxy_server`；以及所有 `Content-Type` 为 `application/json` 的响应，都增加了 `modified: true` 字段。
